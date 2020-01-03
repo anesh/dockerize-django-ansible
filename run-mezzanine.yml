@@ -9,8 +9,8 @@
     # and the user
     database_name: mezzanine
     database_user: mezzanine
-    database_port: 5432
-    gunicorn_port: 8000
+    database_port: "5432"
+    gunicorn_port: "8000"
     docker_host: "{{ lookup('env', 'DOCKER_HOST') | regex_replace('^tcp://(.*):\\d+$', '\\\\1') | default('localhost', true) }}"
     project_dir: /srv/project
     website_domain: "{{ docker_host }}.xip.io"
@@ -33,69 +33,66 @@
 
   tasks:
     - name: start the postgres container
-      docker:
+      docker_container:
         image: postgres:9.4
         name: postgres
-        publish_all_ports: True
+        published_ports: all
         env:
           POSTGRES_USER: "{{ database_user }}"
           POSTGRES_PASSWORD: "{{ database_password }}"
     - name: capture database ip address and mapped port
       set_fact:
-        database_host: "{{ docker_containers[0].NetworkSettings.IPAddress }}"
-        mapped_database_port: "{{ docker_containers[0].NetworkSettings.Ports['5432/tcp'][0].HostPort}}"
+        database_host: "{{ docker_container.NetworkSettings.IPAddress }}"
+        mapped_database_port: "{{ docker_container.NetworkSettings.Ports['5432/tcp'][0].HostPort}}"
     - name: wait for database to come up
       wait_for: host={{ docker_host }} port={{ mapped_database_port }}
     - name: initialize database
-      docker:
-        image: lorin/mezzanine:latest
+      docker_container:
+        image: anesh/mezzanine
+        name: mezzanine
         command: python manage.py {{ item }} --noinput
-        wait: True
+        detach: no
         env: "{{ mezzanine_env }}"
       with_items:
         - syncdb
         - migrate
       register: django
     - name: set the site id
-      docker:
-        image: lorin/mezzanine:latest
+      docker_container:
+        name: mezzanine
+        image: anesh/mezzanine
         command: /srv/scripts/setsite.py
         env: "{{ setsite_env.update(mezzanine_env) }}{{ setsite_env }}"
-        wait: yes
+        detach: no
     - name: set the admin password
-      docker:
-        image: lorin/mezzanine:latest
+      docker_container:
+        name: mezzanine
+        image: anesh/mezzanine
         command: /srv/scripts/setadmin.py
         env: "{{ setadmin_env.update(mezzanine_env) }}{{ setadmin_env }}"
-        wait: yes
+        detach: no
     - name: start the memcached container
-      docker:
-        image: lorin/memcached:latest
+      docker_container:
+        image: anesh/memcached
         name: memcached
     - name: start the mezzanine container
-      docker:
-        image: lorin/mezzanine:latest
+      docker_container:
+        image: anesh/mezzanine
         name: mezzanine
         env: "{{ mezzanine_env }}"
         links: memcached
-    - name: start the mezzanine cron job
-      docker:
-        image: lorin/mezzanine:latest
-        name: mezzanine
-        env: "{{ mezzanine_env }}"
-        command: cron -f
     - name: start the cert container
-      docker:
-        image: lorin/certs:latest
-        name: certs
+      docker_container:
+        image: anesh/cert
+        name: cert
     - name: run nginx
-      docker:
-        image: lorin/nginx-mezzanine:latest
+      docker_container:
+        image: anesh/nginx
         ports:
           - 80:80
           - 443:443
         name: nginx
         volumes_from:
           - mezzanine
-          - certs
+          - cert
         links: mezzanine

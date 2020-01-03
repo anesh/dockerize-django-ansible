@@ -1,14 +1,25 @@
-FROM ansible/ubuntu14.04-ansible:stable
-MAINTAINER Lorin Hochstein <lorin@ansiblebook.com>
+FROM ansible/centos7-ansible
 
-ADD ansible /srv/ansible
+# build deps
+RUN yum update -y 
+
+# Add our ansible code and set the working directory
+ADD ansible /srv/ansible/
+
+# Set working directory
 WORKDIR /srv/ansible
 
+# Execute the ansible code on the local container
 RUN ansible-playbook mezzanine-container.yml -c local
 
+# add a volume for static content
 VOLUME /srv/project/static
 
+# set a new working directory
 WORKDIR /srv/project
 
+# expose the listening port
 EXPOSE 8000
+
+# start command
 CMD ["gunicorn_django", "-c", "gunicorn.conf.py"]
